@@ -81,7 +81,7 @@
     ["trimA","Interior Trim"],["ornaments","Ornaments"],["dashboard","Dashboards"],["dials","Dials"],["doorSpeakers","Door Speakers"],
     ["seats","Seats"],["steeringWheel","Steering Wheels"],["shiftLever","Shift Levers"],["plaques","Plaques"],["speakers","Speakers"],
     ["trunk","Trunks"],["hydraulics","Hydraulics"],["engineBlock","Engine Blocks"],["airFilter","Air Filters"],["struts","Struts"],
-    ["archCover","Arch Covers"],["aerials","Aerials"],["trimB","Exterior Trim"],["tank","Tanks"],["windows","Windows"]
+    ["archCover","Arch Covers"],["aerials","Aerials"],["trimB","Exterior Trim"],["tank","Tanks"],["doorLeft","Left Door"],["doorRight","Right Door"],["lightbar","Lightbars"],["windowTint","Window Tint"]
   ];
 
   const soundNames = [
@@ -262,7 +262,8 @@
   }
 
   function renderSimple(list,type){
-    const items=list.map((x,i)=>({key:type+":"+i,category:type,name:x[0],desc:x[1],cash:x[2],level:x[3]||0,icon:icons[type]}));
+    const modType=type==="suspension"?15:16;
+    const items=list.map((x,i)=>({key:type+":"+i,category:type,name:x[0],desc:x[1],cash:x[2],level:x[3]||0,modType,modIndex:i-1,icon:icons[type]}));
     $("#panelContent").innerHTML='<div class="content-enter"><div class="section-title">AVAILABLE SETUPS</div><div class="option-list">'+items.map(i=>optionRow(i)).join("")+'</div>'+actionArea()+'</div>';
     wireOptions(items);wireAdd();
   }
@@ -490,6 +491,10 @@
     if(!state.cart.length)return;
     const totals=state.cart.reduce((a,x)=>({cash:a.cash+(x.cash||0),diamonds:a.diamonds+(x.diamond||0),lei:a.lei+(x.lei||0)}),{cash:0,diamonds:0,lei:0});
     const result=await nui("purchase",{items:state.cart,totals,vehicle:state.vehicle});
+    if(result?.pending){
+      toast("Checkout sent","Waiting for the server to validate the build and currencies.");
+      return;
+    }
     if(result && result.ok!==false){
       toast("Build applied","Payment accepted and modifications committed.");
       if(!RESOURCE){
@@ -534,7 +539,10 @@
     if(data.action==="setWallet"&&data.wallet){state.wallet={...state.wallet,...data.wallet};renderWallet();}
     if(data.action==="setVehicle"&&data.vehicle){state.vehicle={...state.vehicle,...data.vehicle};updateProjectedSpeed();}
     if(data.action==="setCapabilities"&&data.capabilities){state.capabilities={...state.capabilities,...data.capabilities,body:{...state.capabilities.body,...(data.capabilities.body||{})},bodyOptions:{...state.capabilities.bodyOptions,...(data.capabilities.bodyOptions||{})},wheelOptions:{...state.capabilities.wheelOptions,...(data.capabilities.wheelOptions||{})}};renderRail();renderPanel();}
-    if(data.action==="purchaseResult") toast(data.success?"Purchase complete":"Purchase failed",data.message||"Server response received.");
+    if(data.action==="purchaseResult"){
+      toast(data.success?"Purchase complete":"Purchase failed",data.message||"Server response received.");
+      if(data.success){state.cart=[];state.selected=null;renderCart();renderPanel();updateSelectedPreview();}
+    }
   }
 
   function setupPointerPreview(){
@@ -569,6 +577,8 @@
       if(btn.dataset.mode!=="tuning") toast(btn.textContent+" view","This shell keeps tuning controls active; wire this tab to your server module.");
     }));
   }
+
+  if(RESOURCE) document.body.style.display="none";
 
   $("#checkoutBtn").addEventListener("click",checkout);
   $("#resetBtn").addEventListener("click",resetBuild);
