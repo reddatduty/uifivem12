@@ -123,8 +123,10 @@
     vehicle:{name:"PROGEN EMERUS",plate:"VANTA 01",baseTopSpeed:312,power:812,torque:786},
     capabilities:{
       body:Object.fromEntries(bodyCatalog.map(([id]) => [id, true])),
+      bodyOptions:{}, wheelOptions:{}, liveryOptions:[],
       livery:true,liveryCount:12,neon:true,headlights:true,smoke:true,wheels:true
-    }
+    },
+    bodySlot:null
   };
 
   function money(n){
@@ -158,16 +160,29 @@
     }catch(err){ console.warn("NUI callback failed",event,err); return {ok:false}; }
   }
 
+  function visibleCategories(){
+    return categories.filter(c => {
+      if(c.id==="livery") return state.capabilities.livery !== false;
+      if(c.id==="neon") return state.capabilities.neon !== false;
+      if(c.id==="headlights") return state.capabilities.headlights !== false;
+      if(c.id==="smoke") return state.capabilities.smoke !== false;
+      if(c.id==="wheels") return state.capabilities.wheels !== false;
+      if(c.id==="body") return !state.capabilities.body || Object.values(state.capabilities.body).some(Boolean);
+      return true;
+    });
+  }
+
   function renderRail(){
-    $("#categoryRail").innerHTML = categories.map((c,i) =>
+    const visible=visibleCategories();
+    $("#categoryRail").innerHTML = visible.map((c,i) =>
       '<button class="cat-btn ' + (state.category===c.id?"active":"") + '" data-category="' + c.id + '" aria-label="' + c.label + '">' +
       svg(icons[c.id]) + '<span class="tip">' + String(i+1).padStart(2,"0") + " / " + c.label.toUpperCase() + '</span></button>'
     ).join("");
-    $$(".cat-btn").forEach(btn => btn.addEventListener("click", () => setCategory(btn.dataset.category)));
+    $(".cat-btn").forEach(btn => btn.addEventListener("click", () => setCategory(btn.dataset.category)));
   }
 
   function setCategory(id){
-    state.category=id; state.selected=null;
+    state.category=id; state.selected=null; state.bodySlot=null;
     const c=categories.find(x=>x.id===id);
     $("#categoryIndex").textContent=String(categories.indexOf(c)+1).padStart(2,"0")+" / "+c.label.toUpperCase();
     $("#categoryTitle").textContent=c.title;
@@ -252,23 +267,52 @@
     wireOptions(items);wireAdd();
   }
 
-  function bodyItems(){
-    const supported=bodyCatalog.filter(([id])=>state.capabilities.body && state.capabilities.body[id]!==false);
-    return supported.map(([id,label],i)=>({key:"body:"+id,category:"body",bodyId:id,name:label,desc:"Compatible options available",cash:650000+i*125000,icon:"i-body"}));
+  function bodySlots(){
+    return bodyCatalog.filter(([id])=>state.capabilities.body && state.capabilities.body[id]!==false).map(([id,label])=>{
+      const dynamic=state.capabilities.bodyOptions?.[id];
+      const count=Array.isArray(dynamic)?dynamic.length:0;
+      return {id,label,count};
+    });
   }
+
   function renderBody(){
-    const items=bodyItems();
-    const html='<div class="info-box">'+svg("i-info")+'<span>Categories are filtered from the vehicle capability payload. Unsupported GTA mod slots never appear here.</span></div>'+
-      '<div class="section-title">SUPPORTED BODY SLOTS <span>'+items.length+' AVAILABLE</span></div><div class="option-list">'+items.map(i=>optionRow(i)).join("")+'</div>'+actionArea();
-    $("#panelContent").innerHTML='<div class="content-enter">'+html+'</div>';wireOptions(items);wireAdd();
+    const slots=bodySlots();
+    if(!state.bodySlot){
+      const html='<div class="info-box">'+svg("i-info")+'<span>The game reports the available GTA mod slots for the current vehicle. Unsupported slots are removed automatically.</span></div>'+
+        '<div class="section-title">COMPATIBLE COMPONENTS <span>'+slots.length+' SLOTS</span></div><div class="option-list">'+
+        slots.map(slot=>'<button class="option-row" data-body-slot="'+slot.id+'"><span class="option-icon">'+svg("i-body")+'</span><span class="option-main"><strong>'+escapeHtml(slot.label)+'</strong><small>'+(slot.count?slot.count+' VEHICLE-SPECIFIC OPTIONS':'COMPATIBLE MOD SLOT')+'</small></span><span class="price">'+(slot.count||'OPEN')+'</span></button>').join("")+
+        '</div>';
+      $("#panelContent").innerHTML='<div class="content-enter">'+html+'</div>';
+      $("[data-body-slot]",$("#panelContent")).forEach(btn=>btn.addEventListener("click",()=>{state.bodySlot=btn.dataset.bodySlot;state.selected=null;renderPanel();updateSelectedPreview();}));
+      return;
+    }
+
+    const slot=slots.find(x=>x.id===state.bodySlot);
+    if(!slot){state.bodySlot=null;renderBody();return;}
+    const dynamic=state.capabilities.bodyOptions?.[slot.id] || [];
+    const items=[{key:"body:"+slot.id+":stock",category:"body",bodyId:slot.id,modType:dynamic[0]?.modType,modIndex:-1,name:"Factory / Stock",desc:"Restore the factory component",cash:0,icon:"i-body"}]
+      .concat(dynamic.map((opt,i)=>({
+        key:"body:"+slot.id+":"+opt.modIndex,category:"body",bodyId:slot.id,modType:opt.modType,modIndex:opt.modIndex,
+        name:opt.name||("Option "+String(i+1).padStart(2,"0")),desc:slot.label.toUpperCase()+" · VEHICLE SPECIFIC",
+        cash:opt.cash||Math.min(7500000,650000+i*175000),icon:"i-body"
+      })));
+    let html='<button class="body-back" id="bodyBack">‹ ALL BODY COMPONENTS</button>'+
+      '<div class="section-title">'+escapeHtml(slot.label.toUpperCase())+' <span>'+dynamic.length+' OPTIONS</span></div>';
+    if(dynamic.length) html+='<div class="option-list">'+items.map(i=>optionRow(i)).join("")+'</div>'+actionArea();
+    else html+='<div class="empty-state"><strong>No variants reported</strong><span>The vehicle exposes this slot but has no selectable variants.</span></div>';
+    $("#panelContent").innerHTML='<div class="content-enter">'+html+'</div>';
+    $("#bodyBack").addEventListener("click",()=>{state.bodySlot=null;state.selected=null;renderPanel();updateSelectedPreview();});
+    wireOptions(items);wireAdd();
   }
 
   function renderLivery(){
     if(!state.capabilities.livery){
       $("#panelContent").innerHTML='<div class="empty-state"><strong>No liveries supported</strong><span>This vehicle did not report a livery slot.</span></div>';return;
     }
-    const count=Math.max(1,state.capabilities.liveryCount||8);
-    const items=Array.from({length:count},(_,i)=>({key:"livery:"+i,category:"livery",name:i===0?"Factory Livery":"Livery "+String(i).padStart(2,"0"),desc:"Vehicle-specific graphic package",diamond:i===0?0:35+i*8,icon:"i-livery"}));
+    const dynamic=Array.isArray(state.capabilities.liveryOptions)?state.capabilities.liveryOptions:[];
+    const count=Math.max(1,dynamic.length||state.capabilities.liveryCount||8);
+    const items=[{key:"livery:stock",category:"livery",name:"Factory / None",desc:"Restore the factory livery",diamond:0,liveryIndex:-1,icon:"i-livery"}]
+      .concat(Array.from({length:count},(_,i)=>({key:"livery:"+i,category:"livery",name:dynamic[i]?.name||("Livery "+String(i+1).padStart(2,"0")),desc:"Vehicle-specific graphic package",diamond:dynamic[i]?.diamond||35+i*8,liveryIndex:dynamic[i]?.index??i,liveryType:dynamic[i]?.type||"mod",icon:"i-livery"})));
     $("#panelContent").innerHTML='<div class="content-enter"><div class="section-title">VEHICLE LIVERIES</div><div class="option-list">'+items.map(i=>optionRow(i,i.diamond?"premium":"")).join("")+'</div>'+actionArea()+'</div>';wireOptions(items);wireAdd();
   }
 
@@ -304,16 +348,24 @@
   }
 
   function renderWheels(){
-    if(!wheelFamilies[state.subtab]) state.subtab="Sport";
-    const familyNames=Object.keys(wheelFamilies);
-    const items=wheelFamilies[state.subtab].map((name,i)=>({
-      key:"wheels:"+state.subtab+":"+i,category:"wheels",name:name,desc:state.subtab.toUpperCase()+" · WHEEL "+String(i+1).padStart(2,"0"),
-      cash:["Sport","Muscle","Lowrider","SUV","Offroad","Tuner","Street"].includes(state.subtab)?850000+i*120000:0,
-      diamond:["High End","Track","Open Wheel","Benny's"].includes(state.subtab)?55+i*9:0,
-      premium:["High End","Track","Open Wheel","Benny's"].includes(state.subtab),wheelType:state.subtab,wheelIndex:i,icon:"i-wheel"
-    }));
+    const dynamicFamilies=state.capabilities.wheelOptions||{};
+    const availableFamilies=Object.keys(dynamicFamilies).filter(k=>Array.isArray(dynamicFamilies[k])&&dynamicFamilies[k].length);
+    const familyNames=availableFamilies.length?availableFamilies:Object.keys(wheelFamilies);
+    if(!familyNames.includes(state.subtab)) state.subtab=familyNames[0]||"Sport";
+    const dynamic=dynamicFamilies[state.subtab];
+    const source=Array.isArray(dynamic)&&dynamic.length?dynamic:wheelFamilies[state.subtab]||[];
+    const premiumFamily=["High End","Track","Open Wheel","Benny's","Benny's Original","Benny's Bespoke"].includes(state.subtab);
+    const items=source.map((entry,i)=>{
+      const opt=typeof entry==="string"?{name:entry,index:i}:entry;
+      return {
+        key:"wheels:"+state.subtab+":"+(opt.index??i),category:"wheels",name:opt.name||("Wheel "+String(i+1).padStart(2,"0")),
+        desc:state.subtab.toUpperCase()+" · WHEEL "+String(i+1).padStart(2,"0"),
+        cash:premiumFamily?0:(opt.cash||850000+i*120000),diamond:premiumFamily?(opt.diamond||55+i*9):0,
+        premium:premiumFamily,wheelType:opt.wheelType??opt.type,wheelIndex:opt.index??i,icon:"i-wheel"
+      };
+    });
     let html=tabs(familyNames.map(x=>({id:x,label:x.toUpperCase()})),state.subtab);
-    html+='<div class="section-title">WHEEL DESIGNS</div><div class="option-list">'+items.map(i=>optionRow(i,i.premium?"premium":"")).join("")+'</div>'+actionArea();
+    html+='<div class="section-title">VEHICLE-COMPATIBLE WHEELS <span>'+items.length+' OPTIONS</span></div><div class="option-list">'+items.map(i=>optionRow(i,i.premium?"premium":"")).join("")+'</div>'+actionArea();
     $("#panelContent").innerHTML='<div class="content-enter">'+html+'</div>';wireSubtabs(()=>{});wireOptions(items);wireAdd();
   }
 
@@ -470,7 +522,7 @@
       document.body.style.display="";
       if(data.wallet) state.wallet={...state.wallet,...data.wallet};
       if(data.vehicle) state.vehicle={...state.vehicle,...data.vehicle};
-      if(data.capabilities) state.capabilities={...state.capabilities,...data.capabilities,body:{...state.capabilities.body,...(data.capabilities.body||{})}};
+      if(data.capabilities) state.capabilities={...state.capabilities,...data.capabilities,body:{...state.capabilities.body,...(data.capabilities.body||{})},bodyOptions:{...state.capabilities.bodyOptions,...(data.capabilities.bodyOptions||{})},wheelOptions:{...state.capabilities.wheelOptions,...(data.capabilities.wheelOptions||{})}};
       renderWallet();
       $("#vehicleName").textContent=state.vehicle.name||"CURRENT VEHICLE";
       $("#vehiclePlate").textContent=state.vehicle.plate||"";
@@ -481,7 +533,7 @@
     if(data.action==="close") document.body.style.display="none";
     if(data.action==="setWallet"&&data.wallet){state.wallet={...state.wallet,...data.wallet};renderWallet();}
     if(data.action==="setVehicle"&&data.vehicle){state.vehicle={...state.vehicle,...data.vehicle};updateProjectedSpeed();}
-    if(data.action==="setCapabilities"&&data.capabilities){state.capabilities={...state.capabilities,...data.capabilities,body:{...state.capabilities.body,...(data.capabilities.body||{})}};renderPanel();}
+    if(data.action==="setCapabilities"&&data.capabilities){state.capabilities={...state.capabilities,...data.capabilities,body:{...state.capabilities.body,...(data.capabilities.body||{})},bodyOptions:{...state.capabilities.bodyOptions,...(data.capabilities.bodyOptions||{})},wheelOptions:{...state.capabilities.wheelOptions,...(data.capabilities.wheelOptions||{})}};renderRail();renderPanel();}
     if(data.action==="purchaseResult") toast(data.success?"Purchase complete":"Purchase failed",data.message||"Server response received.");
   }
 
