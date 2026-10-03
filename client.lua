@@ -10,7 +10,7 @@ local BODY_SLOTS = {
     dashboard = 29, dials = 30, doorSpeakers = 31, seats = 32, steeringWheel = 33,
     shiftLever = 34, plaques = 35, speakers = 36, trunk = 37, hydraulics = 38,
     engineBlock = 39, airFilter = 40, struts = 41, archCover = 42, aerials = 43,
-    trimB = 44, tank = 45, doorLeft = 46, doorRight = 47
+    trimB = 44, tank = 45, doorLeft = 46, doorRight = 47, lightbar = 49
 }
 
 local WHEEL_TYPES = {
@@ -118,6 +118,21 @@ local function buildBodyCapabilities(vehicle)
                 }
             end
         end
+    end
+    local tintCount = GetNumVehicleWindowTints()
+    if tintCount and tintCount > 0 then
+        body.windowTint = true
+        bodyOptions.windowTint = {}
+        local tintNames = { 'None', 'Pure Black', 'Dark Smoke', 'Light Smoke', 'Stock', 'Limo', 'Green' }
+        for tint = 0, tintCount - 1 do
+            bodyOptions.windowTint[#bodyOptions.windowTint + 1] = {
+                modType = 'windowTint',
+                modIndex = tint,
+                name = tintNames[tint + 1] or ('Tint %02d'):format(tint + 1)
+            }
+        end
+    else
+        body.windowTint = false
     end
     return body, bodyOptions
 end
@@ -254,7 +269,11 @@ RegisterNUICallback('previewMod', function(data, cb)
     SetVehicleModKit(vehicle, 0)
 
     if data.category == 'body' and data.modType ~= nil then
-        SetVehicleMod(vehicle, tonumber(data.modType), tonumber(data.modIndex) or -1, false)
+        if tostring(data.modType) == 'windowTint' then
+            SetVehicleWindowTint(vehicle, tonumber(data.modIndex) or 0)
+        else
+            SetVehicleMod(vehicle, tonumber(data.modType), tonumber(data.modIndex) or -1, false)
+        end
     elseif data.category == 'suspension' then
         SetVehicleMod(vehicle, 15, tonumber(data.modIndex) or -1, false)
     elseif data.category == 'armor' then
@@ -327,8 +346,12 @@ RegisterNUICallback('removePreview', function(data, cb)
     local category = key:match('^([^:]+)')
     if category == 'body' then
         local bodyId = key:match('^body:([^:]+)')
-        local modType = bodyId and BODY_SLOTS[bodyId]
-        if modType then SetVehicleMod(currentVehicle,modType,snapshot.mods[modType] or -1,false) end
+        if bodyId == 'windowTint' then
+            SetVehicleWindowTint(currentVehicle, snapshot.windowTint or 0)
+        else
+            local modType = bodyId and BODY_SLOTS[bodyId]
+            if modType then SetVehicleMod(currentVehicle,modType,snapshot.mods[modType] or -1,false) end
+        end
     elseif category == 'wheels' then
         SetVehicleWheelType(currentVehicle,snapshot.wheelType)
         SetVehicleMod(currentVehicle,23,snapshot.mods[23] or -1,false)
