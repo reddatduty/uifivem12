@@ -13,4 +13,4 @@ files {
   'app.js'
 }
 
-client_script 'client.lua'
+client_script 'client.lua'\nserver_script 'server.lua'
